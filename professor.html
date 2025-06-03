@@ -1,0 +1,471 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Professor Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="dashboard-style.css">
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+        }
+        select, input[type="text"] {
+            padding: 8px;
+            font-size: 14px;
+            margin: 5px;
+            width: 200px;
+        }
+        .form-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 20px;
+        }
+        #combinedResultStatus {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+        }
+        #combinedResultStatus.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        #combinedResultStatus.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        #combinedResultStatus.info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        
+        #combinedResultLinks a { /* Style for download links */
+            display: inline-block;
+            margin: 5px 10px;
+            padding: 8px 12px;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        #combinedResultLinks a:hover {
+            background-color: #0056b3;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/jwt-decode@latest/build/jwt-decode.min.js"></script>
+</head>
+<body>
+    <div class="heading">
+        <h1>NIRIKSHAK</h1>
+        <p>Logged in as <strong id="loggedInUsername">Faculty</strong></p>
+    </div>
+
+    <div class="form-row">
+        <select id="course"><option value="">Select Course</option></select>
+        <select id="semester"><option value="">Select Semester</option></select>
+        <input type="text" id="year" placeholder="Enter Year (e.g. 2025)" />
+        <select id="examType">
+            <option value="">Select Exam Type</option>
+            <option value="CT1">CT1</option>
+            <option value="CT2">CT2</option>
+            <option value="FAT">FAT</option>
+        </select>
+        <select id="sectionType">
+            <option value="">Select section</option>
+            <option value="A">A</option>
+            <option value="B">B</option>
+        </select>
+        <select id="subject"><option value="">Select Subject</option></select>
+        <select id="subjectCode"><option value="">Select Subject Code</option></select>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <h2>Upload Question Paper</h2>
+            <p>PDF/Image format</p>
+            <label class="upload-btn">
+                <input type="file" id="questionPaper" accept="image/*,.pdf" >
+                Choose File
+            </label>
+        </div>
+
+        <div class="card">
+            <h2>Upload Student Script</h2>
+            <p>PDF/Image format</p>
+            <label class="upload-btn">
+                <input type="file" id="studentScripts" accept="image/*,.pdf" multiple >
+                Choose File
+            </label>
+        </div>
+
+        <div class="card">
+            <h2>Upload Book/Actual Answer</h2>
+            <p>PDF/Image format</p>
+            <label class="upload-btn">
+                <input type="file" id="actualAnswer" accept="image/*,.pdf" >
+                Choose File
+            </label>
+        </div>
+    </div>
+
+    <div class="action-buttons">
+        <button id="submitBtn">Submit</button>
+        <button id="getCombinedResultBtn">Get Results</button>
+        <button>Get Report</button> 
+        <button id="logoutBtn">Logout</button>
+    </div>
+    <div id="combinedResultStatus" style="display: none;"></div>
+    <div id="combinedResultLinks" style="text-align: center; margin-top:10px;"></div>
+
+
+<script>
+    const courseSelect = document.getElementById('course');
+    const semesterSelect = document.getElementById('semester');
+    const subjectSelect = document.getElementById('subject');
+    const subjectCodeSelect = document.getElementById('subjectCode');
+    const yearInput = document.getElementById('year');
+    const examTypeSelect = document.getElementById('examType');
+    const sectionTypeSelect = document.getElementById('sectionType');
+    const loggedInUsernameElement = document.getElementById('loggedInUsername');
+    const combinedResultStatusDiv = document.getElementById('combinedResultStatus');
+    const combinedResultLinksDiv = document.getElementById('combinedResultLinks');
+    const getCombinedResultBtn = document.getElementById('getCombinedResultBtn'); // Store reference
+
+    const apiBase = "http://localhost:3000/api";
+    let pollingInterval; 
+    let originalGetResultsBtnText = getCombinedResultBtn.textContent; // Store original button text
+
+    // --- Session Persistence and Username Display ---
+    document.addEventListener('DOMContentLoaded', () => {
+        const token = localStorage.getItem('token');
+        const lastLoginTime = localStorage.getItem('lastLoginTime');
+
+        if (!token || !lastLoginTime) {
+            window.location.href = "login.html"; return;
+        }
+        const currentTime = Date.now();
+        const thirtyMinutes = 30 * 60 * 1000;
+        if (currentTime - parseInt(lastLoginTime) >= thirtyMinutes) {
+            console.log('Session expired. Please log in again.');
+            localStorage.clear(); window.location.href = "login.html"; return;
+        }
+        try {
+            const decodedToken = jwt_decode(token);
+            const username = decodedToken.username; const role = decodedToken.role;
+            if (username && role === 'professor') {
+                loggedInUsernameElement.textContent = username;
+            } else {
+                console.warn('Invalid token or role, redirecting.');
+                localStorage.clear(); window.location.href = "login.html";
+            }
+        } catch (error) {
+            console.error('Error decoding token:', error);
+            localStorage.clear(); window.location.href = "login.html";
+        }
+    });
+
+    // --- fetchAndPopulate ---
+    async function fetchAndPopulate(selectElement, endpoint, label, query = '') {
+        try {
+            const res = await fetch(`${apiBase}/${endpoint}${query}`);
+            if (!res.ok) throw new Error(`Failed to fetch ${label}: ${res.status} ${res.statusText}`);
+            const data = await res.json();
+            selectElement.innerHTML = `<option value="">Select ${label}</option>`;
+            data.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item; option.textContent = item;
+                selectElement.appendChild(option);
+            });
+            selectElement.disabled = false;
+        } catch (err) {
+            console.error(`Error loading ${label}:`, err);
+            selectElement.innerHTML = `<option value="">No ${label}</option>`;
+            selectElement.disabled = true;
+            // alert(`Could not load ${label.toLowerCase()} list.`); // Simplified alert
+        }
+    }
+
+    // --- fetchSubjects ---
+    async function fetchSubjects(course, semester) {
+        subjectSelect.innerHTML = `<option value="">Loading Subjects...</option>`;
+        subjectCodeSelect.innerHTML = `<option value="">Subject Code</option>`;
+        subjectSelect.disabled = true; subjectCodeSelect.disabled = true;
+        try {
+            const res = await fetch(`${apiBase}/subjects?course=${encodeURIComponent(course)}&semester=${encodeURIComponent(semester)}`);
+            if (!res.ok) throw new Error(`Failed to fetch subjects: ${res.status} ${res.statusText}`);
+            const data = await res.json();
+            subjectSelect.innerHTML = `<option value="">Select Subject</option>`;
+            data.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.name; option.dataset.code = item.code; option.textContent = item.name;
+                subjectSelect.appendChild(option);
+            });
+            subjectSelect.disabled = false;
+        } catch (err) {
+            console.error("Error loading subjects:", err);
+            subjectSelect.innerHTML = `<option value="">No Subjects</option>`;
+            subjectCodeSelect.innerHTML = `<option value="">Subject Code</option>`;
+            subjectSelect.disabled = true; subjectCodeSelect.disabled = true;
+            // alert(`Could not load subjects for ${course} - Sem ${semester}.`); // Simplified alert
+        }
+    }
+
+    // --- Initial load and dropdown event listeners ---
+    fetchAndPopulate(courseSelect, 'courses', 'Course');
+    courseSelect.addEventListener('change', () => {
+        const course = courseSelect.value;
+        semesterSelect.innerHTML = `<option value="">Select Semester</option>`; semesterSelect.disabled = !course;
+        subjectSelect.innerHTML = `<option value="">Select Subject</option>`; subjectSelect.disabled = true;
+        subjectCodeSelect.innerHTML = `<option value="">Subject Code</option>`; subjectCodeSelect.disabled = true;
+        if (course) fetchAndPopulate(semesterSelect, 'semesters', 'Semester', `?course=${encodeURIComponent(course)}`);
+    });
+    semesterSelect.addEventListener('change', () => {
+        const course = courseSelect.value; const semester = semesterSelect.value;
+        subjectSelect.innerHTML = `<option value="">Select Subject</option>`; subjectSelect.disabled = true;
+        subjectCodeSelect.innerHTML = `<option value="">Subject Code</option>`; subjectCodeSelect.disabled = true;
+        if (course && semester) fetchSubjects(course, semester);
+    });
+    subjectSelect.addEventListener('change', () => {
+        const selected = subjectSelect.selectedOptions[0];
+        subjectCodeSelect.innerHTML = `<option value="">Subject Code</option>`;
+        if (selected && selected.dataset.code) {
+            const codeOption = document.createElement('option');
+            codeOption.value = selected.dataset.code; codeOption.textContent = selected.dataset.code;
+            subjectCodeSelect.appendChild(codeOption); subjectCodeSelect.value = selected.dataset.code;
+            subjectCodeSelect.disabled = false;
+        } else {
+            subjectCodeSelect.disabled = true;
+        }
+    });
+
+    // --- Logout Button ---
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+        localStorage.removeItem('token'); localStorage.removeItem('lastLoginTime');
+        window.location.href = "login.html";
+    });
+
+    // --- Submit Button ---
+    document.getElementById('submitBtn').addEventListener('click', async () => {
+        const course = courseSelect.value.trim(); const subject = subjectSelect.value.trim();
+        const subjectCode = subjectCodeSelect.value.trim(); const semester = semesterSelect.value.trim();
+        const year = yearInput.value.trim(); const examType = examTypeSelect.value.trim();
+        const sectionType = sectionTypeSelect.value.trim();
+        const questionPaper = document.getElementById('questionPaper').files[0];
+        const studentScriptFiles = document.getElementById('studentScripts').files;
+        const actualAnswerFile = document.getElementById('actualAnswer').files[0];
+
+        if (!course || !subject || !subjectCode || !semester || !year || !examType || !sectionType || !questionPaper || studentScriptFiles.length === 0 || !actualAnswerFile) {
+            alert("Please fill all fields and upload all files."); return;
+        }
+
+        const formData = new FormData();
+        formData.append('course', course); formData.append('subject', subject);
+        formData.append('subjectCode', subjectCode); formData.append('semester', semester);
+        formData.append('year', year); formData.append('examType', examType);
+        formData.append('sectionType', sectionType); formData.append('questionPaper', questionPaper);
+        formData.append('bookAnswer', actualAnswerFile);
+        for (let i = 0; i < studentScriptFiles.length; i++) formData.append('studentScript', studentScriptFiles[i]);
+
+        const token = localStorage.getItem('token');
+        const headers = {};
+        if (token) { headers['Authorization'] = `Bearer ${token}`; }
+        else { alert("Auth token missing. Please log in again."); localStorage.clear(); window.location.href = "login.html"; return; }
+
+        combinedResultStatusDiv.textContent = 'Submitting files... Please wait.';
+        combinedResultStatusDiv.className = 'info'; combinedResultStatusDiv.style.display = 'block';
+        combinedResultLinksDiv.innerHTML = ''; document.getElementById('submitBtn').disabled = true;
+
+        try {
+            const response = await fetch(`${apiBase}/uploads/professor`, { method: 'POST', headers: headers, body: formData });
+            const result = await response.json();
+            if (response.ok) {
+                // MODIFIED: More informative message. Does NOT start polling here.
+                combinedResultStatusDiv.textContent = result.message || "Files uploaded successfully! Select criteria and click 'Get Results' to process.";
+                combinedResultStatusDiv.className = 'success';
+                // Reset form fields
+                courseSelect.value = ''; semesterSelect.innerHTML = '<option value="">Select Semester</option>'; semesterSelect.disabled = true;
+                subjectSelect.innerHTML = '<option value="">Select Subject</option>'; subjectSelect.disabled = true;
+                subjectCodeSelect.innerHTML = '<option value="">Subject Code</option>'; subjectCodeSelect.disabled = true;
+                yearInput.value = ''; examTypeSelect.value = ''; sectionTypeSelect.value = '';
+                document.getElementById('questionPaper').value = ''; document.getElementById('studentScripts').value = '';
+                document.getElementById('actualAnswer').value = '';
+            } else {
+                combinedResultStatusDiv.textContent = result.message || "Upload failed.";
+                combinedResultStatusDiv.className = 'error';
+                if (response.status === 401 || response.status === 403) {
+                    alert(result.message || "Session expired or unauthorized."); localStorage.clear(); window.location.href = "login.html";
+                }
+            }
+        } catch (err) {
+            console.error("Upload error:", err);
+            combinedResultStatusDiv.textContent = "Server error during upload."; combinedResultStatusDiv.className = 'error';
+        } finally {
+             document.getElementById('submitBtn').disabled = false;
+        }
+    });
+    
+    // --- Helper to update UI with final status and links ---
+    function updateUIWithFinalResults(statusData) {
+        combinedResultLinksDiv.innerHTML = ''; // Clear previous links
+        let message = `Status: ${statusData.status}`;
+        if (statusData.status === 'completed_success' || statusData.status === 'success_already_processed') {
+            message = `Combined results generated for ${statusData.processedStudentCount || statusData.data?.processedStudentCount || statusData.studentsProcessed || 0} students.`;
+            if(statusData.studentsFailed > 0) { // Assuming studentsFailed might be present
+                 message += ` (${statusData.studentsFailed} students had issues/no scorable answers).`;
+            }
+            combinedResultStatusDiv.className = 'success';
+
+            const pdfId = statusData.combinedClassPdfGridFsId || statusData.data?.combinedClassPdfGridFsId || statusData.pdfId;
+            const csvId = statusData.combinedClassCsvGridFsId || statusData.data?.combinedClassCsvGridFsId || statusData.csvId;
+
+            if (pdfId) {
+                const pdfLink = document.createElement('a');
+                pdfLink.href = `${apiBase}/results/download/${pdfId}`;
+                pdfLink.textContent = 'View Combined PDF Report'; pdfLink.target = '_blank';
+                combinedResultLinksDiv.appendChild(pdfLink);
+            }
+            if (csvId) {
+                const csvLink = document.createElement('a');
+                csvLink.href = `${apiBase}/results/download/${csvId}`;
+                csvLink.textContent = 'Download Combined CSV Report';
+                combinedResultLinksDiv.appendChild(csvLink);
+            }
+        } else if (statusData.status && statusData.status.toLowerCase().includes('error')) {
+            message = `Error: ${statusData.message || 'Processing failed.'}`;
+            combinedResultStatusDiv.className = 'error';
+        } else { // In-progress or other statuses
+            message = `Status: ${statusData.status || 'Processing...'} (Last checked: ${new Date().toLocaleTimeString()}). ${statusData.message || ''}`;
+            combinedResultStatusDiv.className = 'info';
+        }
+        combinedResultStatusDiv.textContent = message;
+    }
+
+    // --- Function to re-enable "Get Results" button ---
+    function resetGetResultsButton() {
+        if (getCombinedResultBtn) {
+            getCombinedResultBtn.textContent = originalGetResultsBtnText;
+            getCombinedResultBtn.disabled = false;
+        }
+    }
+
+    // --- Function to poll for combined result status ---
+    async function pollCombinedResultStatus(profUploadId) {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            combinedResultStatusDiv.textContent = "Authentication error. Please re-login.";
+            combinedResultStatusDiv.className = 'error';
+            if (pollingInterval) clearInterval(pollingInterval);
+            resetGetResultsButton(); return;
+        }
+
+        try {
+            const response = await fetch(`${apiBase}/results/combined-class-status/${profUploadId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const statusData = await response.json();
+
+            if (!response.ok) {
+                // Update status but don't necessarily stop polling for transient errors unless it's auth
+                updateUIWithFinalResults({ status: `Checking... Error ${response.status}`, message: statusData.message || response.statusText });
+                if (response.status === 401 || response.status === 403) {
+                     if (pollingInterval) clearInterval(pollingInterval);
+                     alert("Session expired during status check. Please log in again.");
+                     localStorage.clear(); window.location.href = "login.html";
+                     resetGetResultsButton();
+                } else if (response.status === 404) { // ProfessorUpload record not found (yet or permanently)
+                    // Keep polling for a bit, but if it persists, it's an error
+                }
+                return; 
+            }
+            
+            updateUIWithFinalResults(statusData); // Update UI with fetched status
+
+            // Stop polling if process completed or definitive error
+            if (statusData.status === 'completed_success' || statusData.status === 'success_already_processed' || (statusData.status && statusData.status.toLowerCase().includes('error'))) {
+                if (pollingInterval) clearInterval(pollingInterval);
+                resetGetResultsButton();
+            }
+        } catch (err) {
+            console.error("Polling error:", err);
+            // Keep status as info, it might be a network blip
+            combinedResultStatusDiv.textContent = `Error checking status: ${err.message}. Retrying...`;
+            combinedResultStatusDiv.className = 'info'; 
+            // Don't stop polling on generic catch, rely on HTTP errors above to stop.
+        }
+    }
+
+    // --- Get Combined Results button event listener ---
+    getCombinedResultBtn.addEventListener('click', async () => {
+        const course = courseSelect.value.trim(); const subjectCode = subjectCodeSelect.value.trim();
+        const semester = semesterSelect.value.trim(); const year = yearInput.value.trim();
+        const examType = examTypeSelect.value.trim(); const sectionType = sectionTypeSelect.value.trim();
+
+        if (!course || !subjectCode || !semester || !year || !examType || !sectionType) {
+            combinedResultStatusDiv.textContent = "Please select all criteria to get combined results.";
+            combinedResultStatusDiv.className = 'error'; combinedResultStatusDiv.style.display = 'block';
+            combinedResultLinksDiv.innerHTML = ''; return;
+        }
+
+        const token = localStorage.getItem('token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) { headers['Authorization'] = `Bearer ${token}`; }
+        else {
+            combinedResultStatusDiv.textContent = "Auth token missing."; combinedResultStatusDiv.className = 'error';
+            combinedResultStatusDiv.style.display = 'block'; combinedResultLinksDiv.innerHTML = '';
+            localStorage.clear(); window.location.href = "login.html"; return;
+        }
+
+        originalGetResultsBtnText = getCombinedResultBtn.textContent; // Store current text before changing
+        getCombinedResultBtn.textContent = 'Initiating...'; getCombinedResultBtn.disabled = true;
+        combinedResultStatusDiv.textContent = 'Initiating combined result generation... Please wait.';
+        combinedResultStatusDiv.className = 'info'; combinedResultStatusDiv.style.display = 'block';
+        combinedResultLinksDiv.innerHTML = ''; 
+
+        if (pollingInterval) clearInterval(pollingInterval);
+
+        try {
+            const response = await fetch(`${apiBase}/results/combined-class-result`, {
+                method: 'POST', headers: headers,
+                body: JSON.stringify({ course, subjectCode, semester: parseInt(semester), year: parseInt(year), examType, sectionType })
+            });
+            const result = await response.json(); 
+
+            if (response.status === 202) { // Successfully initiated background processing
+                combinedResultStatusDiv.textContent = result.message || `Processing initiated. Checking status...`;
+                combinedResultStatusDiv.className = 'info';
+                getCombinedResultBtn.textContent = "Processing (Status below)"; // Keep button text indicative
+                
+                const profUploadIdToPoll = result.professorUploadId; 
+                if (profUploadIdToPoll) {
+                   setTimeout(() => pollCombinedResultStatus(profUploadIdToPoll), 1000); 
+                   pollingInterval = setInterval(() => pollCombinedResultStatus(profUploadIdToPoll), 7000); 
+                } else {
+                    combinedResultStatusDiv.textContent = "Failed to get a tracking ID for polling.";
+                    combinedResultStatusDiv.className = 'error';
+                    resetGetResultsButton(); // Re-enable button on this specific failure
+                }
+            } else if (response.status === 200 && result.status) { // Results already available or immediate status
+                updateUIWithFinalResults(result); // Display results immediately
+                resetGetResultsButton(); // Re-enable button as process is complete or status given
+                 // If status is an error, class will be set by updateUIWithFinalResults
+                if (result.status === 'success_already_processed' || result.status === 'completed_success') {
+                    combinedResultStatusDiv.className = 'success';
+                } else if (result.status.toLowerCase().includes('error')) {
+                    combinedResultStatusDiv.className = 'error';
+                } else {
+                     combinedResultStatusDiv.className = 'info'; // For other non-error immediate statuses
+                }
+
+            } else { // Other errors during initiation
+                combinedResultStatusDiv.textContent = `Error: ${result.message || response.statusText || 'Failed to initiate.'}`;
+                combinedResultStatusDiv.className = 'error';
+                resetGetResultsButton(); // Re-enable button on failure
+                if (response.status === 401 || response.status === 403) { localStorage.clear(); window.location.href = "login.html"; }
+            }
+        } catch (err) {
+            console.error("Get Combined Result initiation error:", err);
+            combinedResultStatusDiv.textContent = "Client-side error initiating processing."; 
+            combinedResultStatusDiv.className = 'error';
+            resetGetResultsButton(); // Re-enable button on client-side error
+        }
+        // Note: Button re-enabling is now handled by resetGetResultsButton() called on polling end or error
+    });
+</script>
+</body>
+</html>

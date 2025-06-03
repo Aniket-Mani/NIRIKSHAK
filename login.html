@@ -1,0 +1,173 @@
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>NIRIKSHAK - Login</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet"/>
+    <link rel="stylesheet" href="login-style.css" />
+</head>
+<body>
+    <div class="login-container">
+        <h2>Login to Your Account</h2>
+        <form id="login_form">
+            <div class="input-field">
+                <input type="text" id="username" placeholder="Enter Username" required />
+            </div>
+
+            <div class="input-field">
+                <input type="password" id="password" placeholder="Enter Password" required />
+            </div>
+
+            <div class="input-field">
+                <label><input type="radio" name="role" value="student" /> Student</label>
+                <label><input type="radio" name="role" value="professor" /> Professor</label>
+                <label><input type="radio" name="role" value="admin" /> Admin</label>
+            </div>
+
+            <button type="submit" class="login-btn">Login</button>
+
+            <div class="footer">
+                <p>Don't have an account? <a href="signup.html">Sign Up</a></p>
+                <p>forgot password? <a href="forgot-password.html">forgot-password</a></p>
+            </div>
+        </form>
+        <div id="messageArea" style="display: none; margin-top: 15px; text-align: center; color: red;"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jwt-decode@latest/build/jwt-decode.min.js"></script>
+
+    <script>
+        const messageArea = document.getElementById('messageArea');
+
+        // Function to display messages on the page (replaces alert())
+        function displayMessage(message, type = 'info') {
+            messageArea.textContent = message;
+            messageArea.style.display = 'block';
+            messageArea.style.color = (type === 'error') ? 'red' : 'green';
+        }
+
+        // Function to clear messages
+        function clearMessage() {
+            messageArea.textContent = '';
+            messageArea.style.display = 'none';
+            messageArea.style.color = '';
+        }
+
+        // --- Session Persistence Logic (using JWT for username/role) ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const token = localStorage.getItem('token');
+            const lastLoginTime = localStorage.getItem('lastLoginTime');
+
+            if (token && lastLoginTime) {
+                const currentTime = Date.now();
+                const thirtyMinutes = 30 * 60 * 1000; // 30 minutes in milliseconds
+
+                if (currentTime - parseInt(lastLoginTime) < thirtyMinutes) {
+                    try {
+                        const decodedToken = jwt_decode(token);
+                        // Assuming your JWT payload has 'username' and 'role' fields
+                        const storedUsername = decodedToken.username;
+                        const storedRole = decodedToken.role;
+
+                        if (storedUsername && storedRole) {
+                            displayMessage(`Welcome back, ${storedUsername}! Redirecting...`, 'info');
+                            setTimeout(() => { // Small delay for message to be seen
+                                switch (storedRole) {
+                                    case 'student':
+                                        window.location.href = "student.html";
+                                        break;
+                                    case 'professor':
+                                        window.location.href = "professor.html";
+                                        break;
+                                    case 'admin':
+                                        window.location.href = "admin.html";
+                                        break;
+                                    default:
+                                        console.warn('Invalid role found in token, redirecting to login.');
+                                        localStorage.clear(); // Clear invalid session data
+                                        clearMessage();
+                                }
+                            }, 1000); // 1 second delay
+                        } else {
+                            console.warn('Username or role missing in JWT payload, clearing session.');
+                            localStorage.clear();
+                            clearMessage();
+                        }
+                    } catch (error) {
+                        console.error('Error decoding JWT for session persistence:', error);
+                        localStorage.clear(); // Clear token if it's invalid/expired
+                        displayMessage('Your session is invalid. Please log in again.', 'error');
+                    }
+                } else {
+                    // Session expired
+                    console.log('Session expired. Please log in again.');
+                    localStorage.clear(); // Clear all session data
+                    displayMessage('Your session has expired. Please log in again.', 'info');
+                }
+            }
+        });
+
+        // --- Login Form Submission Logic ---
+        document.getElementById('login_form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            clearMessage(); // Clear previous messages
+
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const roleInput = document.querySelector('input[name="role"]:checked');
+
+            if (!roleInput) {
+                displayMessage("Please select a role.", 'error');
+                return;
+            }
+            const role = roleInput.value;
+
+            try {
+                const res = await fetch('http://localhost:3000/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password, role: role })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    // Store only the token and login timestamp.
+                    // Username and role are now derived from the token's payload.
+                    localStorage.setItem('token', data.token);
+                    localStorage.setItem('username', data.username);
+                    localStorage.setItem('lastLoginTime', Date.now().toString()); // Store current timestamp
+
+                    displayMessage('Login successful! Redirecting...', 'info');
+
+                    // Redirect based on role
+                    setTimeout(() => { // Small delay for message to be seen
+                        switch(role) {
+                            case 'student':
+                                window.location.href = "student.html";
+                                break;
+                            case 'professor':
+                                window.location.href = "professor.html";
+                                break;
+                            case 'admin':
+                                window.location.href = "admin.html";
+                                break;
+                            default:
+                                window.location.href = "login.html"; // Fallback
+                        }
+                    }, 1000); // 1 second delay
+                } else {
+                    // Use data.message from backend if available, otherwise a generic message
+                    throw new Error(data.message || "Login failed");
+                }
+            } catch (error) {
+                displayMessage(error.message, 'error');
+                console.error('Login error:', error);
+            }
+        });
+    </script>
+</body>
+</html>

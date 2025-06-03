@@ -1,0 +1,14 @@
+Flask
+Flask-Cors
+PyMuPDF
+pdf2image
+Pillow
+pytesseract
+sentence-transformers
+faiss-cpu
+python-dotenv
+groq
+pymongo
+pandas
+scikit-learn
+python-docx 

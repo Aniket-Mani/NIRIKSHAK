@@ -1,0 +1,253 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>About - NIRIKSHAK</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f4f4f4;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    .header {
+      background-color: #004080;
+      color: white;
+      padding: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header h2 {
+      margin-left: 20px;
+    }
+
+    .navigation a {
+      color: white;
+      text-decoration: none;
+      margin: 0 15px;
+      font-weight: bold;
+      font-size: large;
+    }
+
+    .navigation a:hover {
+      text-decoration: underline;
+    }
+
+    .content-wrapper {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 40px 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+      gap: 40px;
+    }
+
+    .full-form-section {
+      flex: 1;
+      max-width: 45%; /* Keep similar to about section */
+      padding: 30px;
+      background-color: #e0eaf4;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      color: #004080;
+    }
+
+    .full-form-section p {
+      margin: 5px 0; /* Reduced margin for closer lines */
+      line-height: 1.3;
+      font-size: 1.4rem;
+      display: flex; /* Use flexbox for each paragraph */
+      align-items: baseline; /* Align text at the baseline */
+    }
+
+    .full-form-section .initial {
+      font-size: 2.5rem;
+      font-weight: bold;
+      /* No fixed width or margin-right here, flex handles spacing */
+    }
+
+    .full-form-section .full-text {
+      font-size: 1.4rem;
+      padding-left: 5px; /* Small padding to separate initial from text, adjust as needed */
+      /* This allows the full-text to start immediately after the initial */
+    }
+    
+    /* Specific alignment for the main letters of NIRIKSHAK */
+    .full-form-section p:nth-child(1) .initial 
+    .full-form-section p:nth-child(2) .initial 
+    .full-form-section p:nth-child(3) .initial 
+    .full-form-section p:nth-child(4) .initial 
+    .full-form-section p:nth-child(5) .initial 
+    .full-form-section p:nth-child(6) .initial 
+    .full-form-section p:nth-child(7) .initial 
+    .full-form-section p:nth-child(8) .initial 
+    .full-form-section p:nth-child(9) .initial
+
+
+    .main-content {
+      flex: 1;
+      max-width: 55%;
+      padding: 30px;
+      text-align: left;
+      background-color: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+
+    .main-content h1 {
+      font-size: 2.5rem;
+      margin-bottom: 25px;
+      color: #004080;
+      text-align: center;
+    }
+
+    .main-content p {
+      font-size: 1.15rem;
+      color: #333;
+      line-height: 1.7;
+      margin-bottom: 15px;
+    }
+
+    footer {
+      text-align: center;
+      padding: 20px;
+      background-color: #004080;
+      color: white;
+      margin-top: auto;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 992px) {
+      .content-wrapper {
+        flex-direction: column;
+        padding: 30px 20px;
+        gap: 30px;
+      }
+
+      .full-form-section,
+      .main-content {
+        max-width: 100%;
+        padding: 25px;
+      }
+
+      .full-form-section p {
+        font-size: 1.3rem;
+      }
+
+      .full-form-section .initial {
+        font-size: 2.2rem;
+      }
+
+      .full-form-section .full-text {
+        font-size: 1.3rem;
+      }
+
+      .main-content h1 {
+        font-size: 2.2rem;
+      }
+
+      .main-content p {
+        font-size: 1.1rem;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .header {
+        flex-direction: column;
+        align-items: flex-start;
+        padding-bottom: 10px;
+      }
+      .navigation {
+        width: 100%;
+        text-align: center;
+        padding-top: 10px;
+      }
+      .navigation a {
+        display: block;
+        margin: 5px 0;
+      }
+
+      .full-form-section p {
+        font-size: 1.1rem;
+      }
+      .full-form-section .initial {
+        font-size: 1.8rem;
+      }
+      .full-form-section .full-text {
+        font-size: 1.1rem;
+      }
+      .main-content h1 {
+        font-size: 2rem;
+      }
+      .main-content p {
+        font-size: 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header class="header">
+      <h2>NIRIKSHAK</h2>
+      <nav class="navigation">
+        <a href="home.html">Home</a>
+        <a href="about.html">About</a>
+        <a href="services.html">Services</a>
+        <a href="contact.html">Contact</a>
+        <a href="login.html">Login</a>
+      </nav>
+    </header>
+
+    <div class="content-wrapper">
+      <section class="full-form-section">
+        <p><span class="initial">N</span><span class="full-text">atural</span></p>
+        <p><span class="initial">I</span><span class="full-text">nspection and</span></p>
+        <p><span class="initial">R</span><span class="full-text">eading of</span></p>
+        <p><span class="initial">I</span><span class="full-text">mage-based</span></p>
+        <p><span class="initial">K</span><span class="full-text">nowledge from</span></p>
+        <p><span class="initial">S</span><span class="full-text">tudent's</span></p>
+        <p><span class="initial">H</span><span class="full-text">andwritten </span></p>
+        <p><span class="initial">A</span><span class="full-text">nswer scripts using</span></p>
+        <p><span class="initial">K</span><span class="full-text">osine similarity</span></p>
+      </section>
+
+      <section class="main-content">
+        <h1>About NIRIKSHAK</h1>
+        <p>
+          **NIRIKSHAK** is a cutting-edge **smart system** designed to **revolutionize the evaluation of student answer scripts** in schools and colleges. Leveraging advanced **Artificial Intelligence**, it automates the process of checking answers, assigning marks, and delivering results with unprecedented speed and accuracy.
+        </p>
+        <p>
+          Our innovative approach significantly **reduces the time and effort** traditionally spent on manual evaluation. By minimizing human error, NIRIKSHAK ensures **fairer and more consistent grading**. This makes the entire checking process not only **easier and faster** but also more reliable, allowing educators to focus more on teaching and less on administrative tasks.
+        </p>
+      </section>
+    </div>
+
+    <footer>&copy; 2025 NIRIKSHAK. All rights reserved.</footer>
+  </div>
+
+</body>
+</html>

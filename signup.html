@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>NIRIKSHAK - Sign Up</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="login-style.css" />
+</head>
+<body>
+  <div class="login-container">
+    <h2>Create a New Account</h2>
+    <form id="signup_form">
+      <div class="input-field">
+        <input type="text" id="username" placeholder="Enter Username" required />
+      </div>
+
+      <div class="input-field">
+        <input type="password" id="password" placeholder="Enter Password" required />
+      </div>
+
+      <div class="input-field">
+        <input type="password" id="confirm_password" placeholder="Confirm Password" required />
+      </div>
+
+      <div class="input-field">
+        <label><input type="radio" name="role" value="student" /> Student</label>
+        <label><input type="radio" name="role" value="professor" /> Professor</label>
+        <label><input type="radio" name="role" value="admin" /> Admin</label>
+      </div>
+
+      <button type="submit" class="login-btn">Sign Up</button>
+
+      <div class="footer">
+        <p>Already have an account? <a href="login.html">Login</a></p>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    document.getElementById('signup_form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const confirmPassword = document.getElementById('confirm_password').value;
+      const role = document.querySelector('input[name="role"]:checked');
+
+      if (!role) {
+        alert("Please select a role.");
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        alert("Passwords do not match!");
+        return;
+      }
+
+      const res = await fetch('http://localhost:3000/api/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password, role: role.value })
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        alert("Account created successfully!");
+        window.location.href = "login.html";
+      } else {
+        alert(data.error || "Signup failed");
+      }
+    });
+  </script>
+</body>
+</html>

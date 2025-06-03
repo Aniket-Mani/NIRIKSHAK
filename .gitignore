@@ -1,0 +1,52 @@
+# Node.js specific ignores
+node_modules/
+npm-debug.log
+yarn-debug.log
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.staging.local
+
+# Python specific ignores
+*.pyc
+__pycache__/
+.venv/
+env/
+venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Your main .env file (CRITICAL: Do NOT push this to GitHub)
+# This is located in project-root/backend/.env
+backend/.env
+
+# Generated Uploads and Reports (from backend processing)
+# These are generated files and should not be version-controlled
+backend/extract/cache_book_rag_faiss/
+
+# Database files (if running MongoDB data directory locally)
+# Adjust if your MongoDB data directory is named differently or located elsewhere
+data/
+db/
+
+# Logs
+*.log
+logs/
+
+# IDE and Editor specific files
+.idea/             # IntelliJ IDEA / PyCharm
+.vscode/           # Visual Studio Code
+*.sublime-project
+*.sublime-workspace
+.DS_Store          # macOS specific system files
+Thumbs.db          # Windows specific thumbnail cache
+
+# Build artifacts and temporary files (general)
+dist/
+build/
+tmp/

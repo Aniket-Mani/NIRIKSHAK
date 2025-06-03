@@ -1,0 +1,432 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Student Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="dashboard-style.css">
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+        }
+        select {
+            text-transform: uppercase;
+        }
+        #resultLinkContainer a {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            text-align: center;
+        }
+        #resultLinkContainer a:hover {
+            background-color: #45a049;
+        }
+        .result-section {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .result-section h3 {
+            margin-top: 0;
+        }
+    </style>
+</head>
+<body>
+  <div class="heading">
+    <h1>NIRIKSHAK</h1>
+    <p>Logged in as <strong id="userRoleElement"></strong>: <strong id="loggedInUsernameElement">User</strong></p>
+</div>
+
+    <div class="form-row">
+        <select id="course">
+            <option value="">Select Course</option>
+        </select>
+        <select id="semester">
+            <option value="">Select Semester</option>
+        </select>
+        <input type="text" id="year" placeholder="Enter Year (e.g. 2025)" />
+        <select id="examType">
+            <option value="">Select Exam Type</option>
+            <option value="CT1">CT1</option>
+            <option value="CT2">CT2</option>
+            <option value="FAT">FAT</option>
+        </select>
+        <select id="sectionType">
+            <option value="">Select section</option>
+            <option value="A">A</option>
+            <option value="B">B</option>
+        </select>
+        <select id="subject" disabled>
+            <option value="">Select Subject</option>
+        </select>
+        <select id="subjectCode" disabled>
+            <option value="">Subject Code</option>
+        </select>
+    </div>
+
+    <div class="container">
+        <div class="card" style="min-height: 180px;">
+            <h2>Upload Answer Script</h2>
+            <p>PDF/Image format</p>
+            <label class="upload-btn">
+                <input type="file" id="answerScript" accept="image/*,.pdf" >
+                Choose File
+            </label>
+        </div>
+    </div>
+
+    <div class="action-buttons">
+        <button id="submitBtn">Submit</button>
+        <button id="resultBtn">Get Result</button>
+        <button id="logoutBtn">Logout</button>
+        <p id="submitStatusMessage" style="margin-top: 10px; text-align: center; font-weight: bold;"></p>
+    </div>
+
+    <div id="resultDisplayArea" class="result-section" style="display:none;">
+        <h3>ScoreCard</h3>
+        <pre id="resultJson"></pre>
+        <div id="resultLinkContainer"></div>
+    </div>
+
+<script>
+    const loggedInUsernameEl = document.getElementById('loggedInUsernameElement');
+    const username = localStorage.getItem('username') || 'User'; // Assuming 'username' stores the rollNo for students
+    loggedInUsernameEl.textContent = username;
+    const courseSelect = document.getElementById('course');
+    const semesterSelect = document.getElementById('semester');
+    const subjectSelect = document.getElementById('subject');
+    const subjectCodeSelect = document.getElementById('subjectCode');
+    const yearInput = document.getElementById('year');
+    const examTypeSelect = document.getElementById('examType');
+    const sectionTypeSelect = document.getElementById('sectionType'); // Added this
+    const resultDisplayArea = document.getElementById('resultDisplayArea');
+    const resultJsonElement = document.getElementById('resultJson');
+    const resultLinkContainer = document.getElementById('resultLinkContainer');
+    const submitStatusMsgEl = document.getElementById('submitStatusMessage');
+
+
+    const apiBase = "http://localhost:3000/api";
+
+    async function fetchAndPopulate(selectElement, endpoint, label) {
+        try {
+            const res = await fetch(`${apiBase}/${endpoint}`);
+            if (!res.ok) throw new Error(`Failed to fetch ${label}: ${res.status} ${res.statusText}`);
+            const data = await res.json();
+            selectElement.innerHTML = `<option value="">Select ${label}</option>`;
+            data.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item;
+                option.textContent = item;
+                selectElement.appendChild(option);
+            });
+            selectElement.disabled = false;
+        } catch (err) {
+            console.error(`Error loading ${label}:`, err);
+            selectElement.innerHTML = `<option value="">Error loading ${label}</option>`;
+            selectElement.disabled = true;
+            alert(`Could not load ${label.toLowerCase()} list. Ensure the server is running.`);
+        }
+    }
+
+    async function fetchSubjects(course, semester) {
+        subjectSelect.innerHTML = `<option value="">Loading Subjects...</option>`;
+        subjectCodeSelect.innerHTML = `<option value="">Subject Code</option>`;
+        subjectSelect.disabled = true;
+        subjectCodeSelect.disabled = true;
+        try {
+            // Assuming /api/subjects endpoint exists and returns {name: 'Sub Name', code: 'SubCode'}
+            const res = await fetch(`${apiBase}/subjects?course=${encodeURIComponent(course)}&semester=${encodeURIComponent(semester)}`);
+            if (!res.ok) throw new Error(`Failed to fetch subjects: ${res.status} ${res.statusText}`);
+            const data = await res.json();
+            subjectSelect.innerHTML = `<option value="">Select Subject</option>`;
+            data.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.name; // Store subject name as value
+                option.dataset.code = item.code; // Store subject code in dataset
+                option.textContent = `${item.name} (${item.code})`;
+                subjectSelect.appendChild(option);
+            });
+            subjectSelect.disabled = false;
+        } catch (err) {
+            console.error("Error loading subjects:", err);
+            subjectSelect.innerHTML = `<option value="">Error Loading Subjects</option>`;
+            alert(`Could not load subjects for ${course} - Semester ${semester}.`);
+        }
+    }
+
+    fetchAndPopulate(courseSelect, 'courses', 'Course');
+    fetchAndPopulate(semesterSelect, 'semesters', 'Semester'); // Assuming this endpoint exists
+
+    courseSelect.addEventListener('change', () => {
+        subjectCodeSelect.innerHTML = '<option value="">Subject Code</option>';
+        subjectCodeSelect.disabled = true;
+        if (courseSelect.value && semesterSelect.value) {
+            fetchSubjects(courseSelect.value, semesterSelect.value);
+        } else {
+            subjectSelect.innerHTML = '<option value="">Select Subject</option>';
+            subjectSelect.disabled = true;
+        }
+    });
+
+    semesterSelect.addEventListener('change', () => {
+        subjectCodeSelect.innerHTML = '<option value="">Subject Code</option>';
+        subjectCodeSelect.disabled = true;
+        if (courseSelect.value && semesterSelect.value) {
+            fetchSubjects(courseSelect.value, semesterSelect.value);
+        } else {
+            subjectSelect.innerHTML = '<option value="">Select Subject</option>';
+            subjectSelect.disabled = true;
+        }
+    });
+
+    subjectSelect.addEventListener('change', () => {
+        const selectedOption = subjectSelect.selectedOptions[0];
+        subjectCodeSelect.innerHTML = ''; // Clear previous options
+        if (selectedOption && selectedOption.dataset.code) {
+            const codeOption = document.createElement('option');
+            codeOption.value = selectedOption.dataset.code;
+            codeOption.textContent = selectedOption.dataset.code;
+            codeOption.selected = true; // Auto-select
+            subjectCodeSelect.appendChild(codeOption);
+            subjectCodeSelect.disabled = false;
+        } else {
+            subjectCodeSelect.innerHTML = '<option value="">Subject Code</option>';
+            subjectCodeSelect.disabled = true;
+        }
+    });
+
+    if (!localStorage.getItem('token')) {
+        window.location.href = "login.html";
+    } else {
+        // You can decode and display username if needed, similar to professor.html
+        try {
+        } catch (e) { console.error("Error decoding token for display:", e); }
+    }
+
+
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+        localStorage.removeItem('token');
+        localStorage.removeItem('username'); // Also clear username
+        window.location.href = "login.html";
+    });
+
+    document.getElementById('submitBtn').addEventListener('click', async () => {
+        const submitBtnElement = document.getElementById('submitBtn');
+        const originalSubmitBtnText = submitBtnElement.textContent;
+
+        submitStatusMsgEl.textContent = 'Submitting... Please wait.';
+        submitStatusMsgEl.style.color = 'blue';
+        submitBtnElement.textContent = 'Submitting...';
+        submitBtnElement.disabled = true;
+
+        const course = courseSelect.value;
+        const subject = subjectSelect.value; // This is subject name
+        const subjectCode = subjectCodeSelect.value;
+        const semester = semesterSelect.value;
+        const year = yearInput.value.trim();
+        const examType = examTypeSelect.value;
+        const sectionType = sectionTypeSelect.value.trim(); // Get section type
+        const answerScript = document.getElementById('answerScript').files[0];
+
+        if (!course || !subject || !subjectCode || !semester || !year || !examType || !sectionType || !answerScript) {
+            submitStatusMsgEl.textContent = "Please fill all fields (including section) and select a file.";
+            submitStatusMsgEl.style.color = 'red';
+            submitBtnElement.textContent = originalSubmitBtnText;
+            submitBtnElement.disabled = false;
+            return;
+        }
+        const formData = new FormData();
+        formData.append('course', course);
+        formData.append('subject', subject); // Subject name
+        formData.append('subjectCode', subjectCode);
+        formData.append('semester', semester);
+        formData.append('year', year);
+        formData.append('examType', examType);
+        formData.append('sectionType', sectionType); // Add section type
+        formData.append('answerScript', answerScript);
+
+        const token = localStorage.getItem('token');
+        const headers = {};
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        } else {
+            // This case should ideally be caught by the check at the start of the script
+            submitStatusMsgEl.textContent = "Authentication error. Please log in again.";
+            submitStatusMsgEl.style.color = 'red';
+            submitBtnElement.textContent = originalSubmitBtnText;
+            submitBtnElement.disabled = false;
+            // window.location.href = "login.html"; // Optional: redirect
+            return;
+        }
+
+        try {
+            const response = await fetch(`${apiBase}/uploads/student`, {
+                method: 'POST',
+                headers: headers, // Token is now included
+                body: formData
+            });
+            const result = await response.json();
+            if (response.ok) {
+                submitStatusMsgEl.textContent = result.message || "Uploaded successfully!";
+                submitStatusMsgEl.style.color = 'green';
+                // Reset form fields
+                courseSelect.value = ''; semesterSelect.value = ''; yearInput.value = '';
+                examTypeSelect.value = ''; sectionTypeSelect.value = '';
+                subjectSelect.innerHTML = '<option value="">Select Subject</option>'; subjectSelect.disabled = true;
+                subjectCodeSelect.innerHTML = '<option value="">Subject Code</option>'; subjectCodeSelect.disabled = true;
+                document.getElementById('answerScript').value = '';
+            } else {
+                submitStatusMsgEl.textContent = result.message || `Upload failed (Status: ${response.status}).`;
+                submitStatusMsgEl.style.color = 'red';
+                 if (response.status === 401 || response.status === 403) { // Unauthorized
+                    setTimeout(() => { window.location.href = "login.html"; }, 3000);
+                }
+            }
+        } catch (err) {
+            console.error("Upload error:", err);
+            submitStatusMsgEl.textContent = "Server error during upload. Please try again.";
+            submitStatusMsgEl.style.color = 'red';
+        } finally {
+            submitBtnElement.textContent = originalSubmitBtnText;
+            submitBtnElement.disabled = false;
+        }
+    });
+
+    document.getElementById('resultBtn').addEventListener('click', async () => {
+        const subjectCode = subjectCodeSelect.value;
+        const examType = examTypeSelect.value;
+        const yearString = yearInput.value.trim();
+        const semesterString = semesterSelect.value;
+        const course = courseSelect.value;
+        const sectionType = sectionTypeSelect.value.trim(); // Get sectionType
+
+        const rollNo = localStorage.getItem('username'); // Use 'username' from localStorage as rollNo
+        if (!rollNo) {
+            alert("Roll number (username) not found in local storage. Please log in again.");
+            return;
+        }
+
+        if (!course || !subjectCode || !semesterString || !yearString || !examType || !sectionType ) { // Added sectionType check
+            alert("Please select all exam criteria (Course, Semester, Year, Exam Type, Section, Subject) to get results.");
+            return;
+        }
+        const year = parseInt(yearString);
+        const semester = parseInt(semesterString);
+        if (isNaN(year) || isNaN(semester)) {
+            alert("Year and Semester must be valid numbers.");
+            return;
+        }
+
+        const resultBtnElement = document.getElementById('resultBtn');
+        const originalBtnText = resultBtnElement.textContent;
+        resultBtnElement.textContent = 'Fetching Result...';
+        resultBtnElement.disabled = true;
+
+        resultDisplayArea.style.display = 'none';
+        resultJsonElement.textContent = '';
+        resultLinkContainer.innerHTML = '';
+
+        // --- MODIFICATION: Add token to headers ---
+        const token = localStorage.getItem('token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        } else {
+            alert("Authentication token missing. Please log in again.");
+            resultBtnElement.textContent = originalBtnText;
+            resultBtnElement.disabled = false;
+            // window.location.href = "login.html"; // Optional: redirect
+            return;
+        }
+        // --- END MODIFICATION ---
+
+        try {
+            const response = await fetch(`${apiBase}/results/student-result`, {
+                method: 'POST',
+                headers: headers, // Pass modified headers with token
+                body: JSON.stringify({
+                    rollNo: rollNo.trim(),
+                    subjectCode: subjectCode.trim(),
+                    examType: examType.trim(),
+                    year: year,
+                    semester: semester,
+                    course: course.trim(),
+                    sectionType: sectionType.trim() // Include sectionType in the request body
+                })
+            });
+
+            const resultText = await response.text();
+
+            if (response.ok) {
+                try {
+                    const resultData = JSON.parse(resultText);
+                    resultDisplayArea.style.display = 'block';
+                    let pdfId = resultData.gridFsPdfId || (resultData.data && resultData.data.gridFsPdfId);
+
+                    // Do not display raw JSON to the student
+                    // resultJsonElement.textContent = JSON.stringify(resultData, null, 2); 
+
+                    if (resultData.status && resultData.status.startsWith('success') && pdfId) {
+                        const downloadUrl = `${apiBase}/results/download/${pdfId}`;
+                        const link = document.createElement('a');
+                        link.href = downloadUrl;
+                        link.textContent = `View/Download Marksheet PDF`;
+                        link.target = "_blank";
+                        resultLinkContainer.appendChild(link);
+                        // Use a less intrusive way to show success, or a status message area
+                        submitStatusMsgEl.textContent = `Result processed: ${resultData.message || 'Success'}. Click link to view.`;
+                        submitStatusMsgEl.style.color = 'green';
+                    } else if (resultData.message) {
+                        resultJsonElement.textContent = `Server Message: ${resultData.message}`;
+                        submitStatusMsgEl.textContent = `Note from server: ${resultData.message}`;
+                        submitStatusMsgEl.style.color = 'orange';
+                    } else {
+                        resultJsonElement.textContent = 'Result fetched, but PDF link might not be available or status indicates an issue.';
+                         submitStatusMsgEl.textContent = 'Result fetched, but PDF link may not be ready or an issue occurred.';
+                         submitStatusMsgEl.style.color = 'orange';
+                    }
+                } catch (jsonParseError) {
+                    console.error("Error parsing JSON response:", jsonParseError, "Response text:", resultText);
+                    resultDisplayArea.style.display = 'block';
+                    resultJsonElement.textContent = `Error: Server sent an unexpected response.`;
+                    submitStatusMsgEl.textContent = `Received an unexpected server response. Status: ${response.status}.`;
+                    submitStatusMsgEl.style.color = 'red';
+                }
+            } else {
+                resultDisplayArea.style.display = 'block';
+                let errorMessage = `Server error: ${response.status} ${response.statusText}.`;
+                try {
+                    const errorData = JSON.parse(resultText);
+                    errorMessage = errorData.message || errorData.errorDetails || JSON.stringify(errorData);
+                } catch (e) {
+                    errorMessage += ` Response: ${resultText.substring(0, 200)}...`;
+                }
+                submitStatusMsgEl.textContent = `Error fetching result: ${errorMessage}`;
+                submitStatusMsgEl.style.color = 'red';
+                resultJsonElement.textContent = `Error: ${errorMessage}`;
+                 if (response.status === 401 || response.status === 403) { // Unauthorized
+                    setTimeout(() => { window.location.href = "login.html"; }, 3000);
+                }
+            }
+        } catch (err) {
+            console.error("Get Result API call error:", err);
+            resultDisplayArea.style.display = 'block';
+            resultJsonElement.textContent = `Communication Error: ${err.message}.`;
+            submitStatusMsgEl.textContent = `A communication error occurred. Please try again.`;
+            submitStatusMsgEl.style.color = 'red';
+        } finally {
+            resultBtnElement.textContent = originalBtnText;
+            resultBtnElement.disabled = false;
+        }
+    });
+</script>
+</body>
+</html>
