@@ -56,6 +56,8 @@ RESULTS_COLLECTION_NAME = "Results"
 # ---------------------------------------------------------------------------
 # DATABASE CONNECTIONS
 # ---------------------------------------------------------------------------
+
+
 try:
     print(f"INFO (CombinedResults): Connecting to MongoDB at {MONGO_CONNECTION_STRING}...", file=sys.stderr)
     client = MongoClient(MONGO_CONNECTION_STRING, serverSelectionTimeoutMS=5000)
@@ -89,6 +91,20 @@ except Exception as e:
     traceback.print_exc(file=sys.stderr)
     sys.exit(1)
 
+
+def normalize_qid(qid: Any) -> str:
+    """
+    Robustly normalizes a question ID to a consistent format.
+    Examples: "Q1 (a)" -> "1a", "2b" -> "2b", "3" -> "3".
+    """
+    if not isinstance(qid, str):
+        qid = str(qid)
+    # Convert to lowercase, remove all whitespace, parentheses, and periods.
+    s = qid.lower().strip()
+    s = re.sub(r'[\s().]', '', s)
+    # Remove leading "q" or "question"
+    s = re.sub(r'^(question|q)', '', s)
+    return s
 
 def preprocess(text: str) -> str:
     if not text or not isinstance(text, str):
@@ -161,6 +177,8 @@ def build_reference_vectors(parsed_ref_answers: Dict[str, Any]) -> Dict[str, Lis
 # ---------------------------------------------------------------------------
 # SIMILARITY CALCULATION
 # ---------------------------------------------------------------------------
+# Replace the entire calculate_similarity_for_student function with this corrected version.
+
 def calculate_similarity_for_student(
     student_data_from_prof_doc: Dict[str, Any],
     ref_vecs: Dict[str, List[Union[np.ndarray, None]]],
@@ -169,69 +187,78 @@ def calculate_similarity_for_student(
     rows: List[Dict[str, Any]] = []
     roll_no = student_data_from_prof_doc.get("roll_no")
     if not roll_no:
-        print("WARNING (CombinedResults): Student entry in professoruploads missing 'roll_no'. Skipping.", file=sys.stderr)
+        print("WARNING (CombinedResults): Student entry missing 'roll_no'. Skipping.", file=sys.stderr)
         return pd.DataFrame()
 
+    # --- NEW ROBUST LOGIC START ---
+
+    # 1. Normalize the professor's data keys for consistent matching.
+    normalized_ref_vecs = {normalize_qid(k): v for k, v in ref_vecs.items()}
+    normalized_max_marks_map = {normalize_qid(k): v for k, v in max_marks_map.items()}
+
+    # 2. Aggregate all of a student's answers by the PRIMARY question number (e.g., "1", "2").
+    # This groups all parts of an answer (e.g., for 1a, 1b) under a single key "1".
+    student_answers_by_primary_qid: Dict[str, List[str]] = {}
+    primary_qid_pattern = re.compile(r'(\d+)')
     student_answers_list = student_data_from_prof_doc.get("answers", [])
-    if not isinstance(student_answers_list, list):
-        print(
-            f"WARNING (CombinedResults): 'answers' for roll {roll_no} (from professoruploads) is not a list or missing. Skipping.",
-            file=sys.stderr
-        )
-        return pd.DataFrame()
+    if isinstance(student_answers_list, list):
+        for ans_data in student_answers_list:
+            qid_from_student = ans_data.get("question_no")
+            answer_text = ans_data.get("answer_text")
+            if qid_from_student and answer_text:
+                match = primary_qid_pattern.match(str(qid_from_student))
+                if match:
+                    primary_qid = match.group(1)
+                    student_answers_by_primary_qid.setdefault(primary_qid, []).append(answer_text)
 
-    for ans_data in student_answers_list:
-        if not isinstance(ans_data, dict):
+    # 3. Iterate through the PROFESSOR's questions, which is the source of truth.
+    def natural_sort_key(s: str) -> List[Union[int, str]]:
+        return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
+    
+    sorted_prof_qids = sorted(normalized_max_marks_map.keys(), key=natural_sort_key)
+
+    for prof_qid_normalized in sorted_prof_qids:
+        # Find the primary number of the professor's question (e.g., "1" from "1a").
+        prof_primary_qid_match = primary_qid_pattern.match(prof_qid_normalized)
+        if not prof_primary_qid_match:
             continue
-        qid_from_student = ans_data.get("question_no")
-        if not qid_from_student:
-            continue
-
-        temp_id_student = str(qid_from_student).strip()
-        match_student = re.match(r"^[Qq]?([0-9]+[a-zA-Z]?)$", temp_id_student)
-        if match_student:
-            qid_normalized_student = match_student.group(1)
-        else:
-            qid_normalized_student = temp_id_student.replace(" ", "").replace(".", "_").replace("/", "_")
-
-        stu_answer_text = ans_data.get("answer_text")
-        if stu_answer_text is None:
-            continue
-
-        stu_vec = embed(str(stu_answer_text))
+        prof_primary_qid = prof_primary_qid_match.group(1)
+        
+        # Get the student's entire block of answers for that primary number.
+        stu_answer_texts = student_answers_by_primary_qid.get(prof_primary_qid)
+        
+        question_max_marks = normalized_max_marks_map.get(prof_qid_normalized, 0)
         similarity = 0.0
-        if stu_vec is not None:
-            ref_q_vecs_for_qid = ref_vecs.get(qid_normalized_student, [])
-            if not ref_q_vecs_for_qid and qid_normalized_student in max_marks_map:
-                print(f"WARNING (CombinedResults): No ref vecs for QID '{qid_normalized_student}' for roll {roll_no}.", file=sys.stderr)
+        student_answer_summary = "Not Answered"
 
-            sim_scores = [cos_sim(stu_vec, ref_v) for ref_v in ref_q_vecs_for_qid if ref_v is not None]
-            similarity = max(sim_scores) if sim_scores else 0.0
+        if stu_answer_texts:
+            # Combine all parts of the student's answer into one text block for comparison.
+            combined_stu_answer = "\n\n".join(stu_answer_texts)
+            student_answer_summary = (combined_stu_answer[:100] + "...") if len(combined_stu_answer) > 100 else combined_stu_answer
+            
+            stu_vec = embed(combined_stu_answer)
+            if stu_vec is not None:
+                # Compare the student's combined answer against the specific sub-question's reference vectors.
+                ref_q_vecs_for_qid = normalized_ref_vecs.get(prof_qid_normalized, [])
+                sim_scores = [cos_sim(stu_vec, ref_v) for ref_v in ref_q_vecs_for_qid if ref_v is not None]
+                similarity = max(sim_scores) if sim_scores else 0.0
 
-        question_max_marks = max_marks_map.get(qid_normalized_student, 0)
-        if qid_normalized_student not in max_marks_map:
-            print(
-                f"INFO (CombinedResults): Max marks not found for student QID '{qid_normalized_student}' "
-                f"(orig: '{qid_from_student}') for roll {roll_no}. "
-                f"Avail ref QIDs: {list(max_marks_map.keys())}",
-                file=sys.stderr
-            )
-
-        summary_text = str(stu_answer_text)
-        student_answer_summary = (summary_text[:100] + "...") if len(summary_text) > 100 else summary_text
-
+        # Append a row for EVERY professor sub-question.
         rows.append({
             "roll_no": roll_no,
-            "question_id": qid_normalized_student,
+            "question_id": prof_qid_normalized,
             "max_marks": question_max_marks,
             "similarity": round(similarity, 3),
             "student_answer_summary": student_answer_summary
         })
 
+    # --- NEW ROBUST LOGIC END ---
+
+    if not rows:
+        print(f"INFO (CombinedResults): No data to build dataframe for roll {roll_no}.", file=sys.stderr)
+        return pd.DataFrame()
+
     df = pd.DataFrame(rows)
-    if df.empty:
-        print(f"INFO (CombinedResults): Similarity dataframe empty for roll {roll_no} (from professoruploads).", file=sys.stderr)
-        return pd.DataFrame(columns=["roll_no", "question_id", "max_marks", "similarity", "student_answer_summary", "score"])
 
     def score_rule(sim: float, max_m: int) -> int:
         sim = float(sim) if sim is not None else 0.0
@@ -452,6 +479,7 @@ def build_class_pdf(df: pd.DataFrame, image_path: str, exam_details: Dict[str, A
         pd.DataFrame().to_csv(csv_name, index=False)
         return None, csv_name
 
+    # --- Start of existing logic (no changes here) ---
     course_arg = exam_details.get("course_arg", "COURSE") 
     subject_code_arg = exam_details.get("subject_code_arg", "SUBJECT_CODE")
     exam_type_arg = exam_details.get("exam_type_arg", "EXAM_TYPE")
@@ -496,12 +524,15 @@ def build_class_pdf(df: pd.DataFrame, image_path: str, exam_details: Dict[str, A
     doc = Document()
     sections_doc = doc.sections
     for section in sections_doc: 
-        section.left_margin = Inches(0.75)
-        section.right_margin = Inches(0.75)
+        section.left_margin = Inches(0.5)
+        section.right_margin = Inches(0.5)
         section.top_margin = Inches(0.5)
         section.bottom_margin = Inches(0.5)
+    
+    # --- End of existing logic (no changes here) ---
 
-    # --- New Header Start (Class PDF) ---
+    # --- Header and Details Table Generation (no changes here) ---
+    # ... (The code for adding the logo, title, and examination details table remains the same) ...
     if os.path.exists(image_path):
         try:
             logo_paragraph = doc.add_paragraph()
@@ -528,7 +559,6 @@ def build_class_pdf(df: pd.DataFrame, image_path: str, exam_details: Dict[str, A
     run_inst_name2.font.bold = True
     
     doc.add_paragraph() # Spacer paragraph after header
-    # --- New Header End (Class PDF) ---
     
     p_title = doc.add_paragraph()
     p_title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
@@ -561,51 +591,99 @@ def build_class_pdf(df: pd.DataFrame, image_path: str, exam_details: Dict[str, A
         run_value.font.name = 'Times New Roman'; run_value.font.size = Pt(10); run_value.font.bold = False
     try:
         details_table.columns[0].width = Inches(1.8) 
-        details_table.columns[1].width = Inches(4.2) 
+        details_table.columns[1].width = Inches(5.2) 
     except Exception as e_width_details:
         print(f"WARN (CR Class): Error setting details_table column widths: {e_width_details}", file=sys.stderr)
     doc.add_paragraph() 
+    # --- End of Header and Details Table Generation ---
 
     tbl_data_docx = score_pivot_renamed.reset_index()
     tbl_data_docx.rename(columns={'roll_no': 'roll no'}, inplace=True)
-    cols_order_docx = [col for col in tbl_data_docx.columns if col not in ['Total', 'Percentage']]
-    if 'Total' in tbl_data_docx.columns: cols_order_docx.append('Total')
-    if 'Percentage' in tbl_data_docx.columns: cols_order_docx.append('Percentage')
+    cols_order_docx = ['roll no'] + [col for col in score_pivot_renamed.columns if col not in ['Total', 'Percentage']]
+    if 'Total' in score_pivot_renamed.columns: cols_order_docx.append('Total')
+    if 'Percentage' in score_pivot_renamed.columns: cols_order_docx.append('Percentage')
     tbl_data_docx = tbl_data_docx[cols_order_docx]
 
     if not tbl_data_docx.empty:
         num_cols = len(tbl_data_docx.columns)
         ct = doc.add_table(rows=1, cols=num_cols)
         ct.style = 'Table Grid'
-        ct.autofit = False
-        try: 
-            if num_cols > 0: ct.columns[0].width = Inches(1.3)  
-            num_qid_cols = num_cols - 1 - (1 if 'Total' in cols_order_docx else 0) - (1 if 'Percentage' in cols_order_docx else 0)
-            qid_col_width = Inches(0.7) if num_qid_cols > 0 else Inches(0.8)
-            for i in range(1, 1 + num_qid_cols):
-                if i < num_cols: ct.columns[i].width = qid_col_width
-            current_col_idx = 1 + num_qid_cols
-            if 'Total' in cols_order_docx and current_col_idx < num_cols: ct.columns[current_col_idx].width = Inches(0.8); current_col_idx +=1
-            if 'Percentage' in cols_order_docx and current_col_idx < num_cols: ct.columns[current_col_idx].width = Inches(1.0)
-        except Exception as e_width_main: print(f"WARN (CR Class): Error setting main table column widths: {e_width_main}", file=sys.stderr)
+        ct.allow_autofit = False # Important for manual width setting
+
+        # ▼▼▼ NEW DYNAMIC COLUMN WIDTH LOGIC ▼▼▼
+        try:
+            # Total page width minus margins
+            page_width = doc.sections[0].page_width - doc.sections[0].left_margin - doc.sections[0].right_margin
+
+            # Set widths for fixed columns
+            roll_no_width = Inches(1.0)
+            total_width = Inches(0.5)
+            percentage_width = Inches(0.8)
+            
+            used_width = 0
+            has_total = 'Total' in tbl_data_docx.columns
+            has_percentage = 'Percentage' in tbl_data_docx.columns
+            
+            # Account for the width of fixed columns
+            if 'roll no' in tbl_data_docx.columns:
+                used_width += roll_no_width
+            if has_total:
+                used_width += total_width
+            if has_percentage:
+                used_width += percentage_width
+
+            # Calculate width available for the question columns
+            num_qid_cols = num_cols - 1 - (1 if has_total else 0) - (1 if has_percentage else 0)
+            available_width_for_qids = page_width - used_width
+            qid_col_width = (available_width_for_qids / num_qid_cols) if num_qid_cols > 0 else Inches(0.5)
+
+            # Apply calculated widths to the table
+            col_idx = 0
+            if 'roll no' in tbl_data_docx.columns:
+                ct.columns[col_idx].width = roll_no_width
+                col_idx += 1
+            
+            # Apply width to all question columns
+            for _ in range(num_qid_cols):
+                if col_idx < num_cols:
+                    ct.columns[col_idx].width = qid_col_width
+                    col_idx += 1
+            
+            if has_total and col_idx < num_cols:
+                ct.columns[col_idx].width = total_width
+                col_idx += 1
+            
+            if has_percentage and col_idx < num_cols:
+                ct.columns[col_idx].width = percentage_width
+
+        except Exception as e_width_main:
+            print(f"WARN (CR Class): Error setting dynamic table column widths: {e_width_main}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+        # ▲▲▲ END OF NEW DYNAMIC COLUMN WIDTH LOGIC ▲▲▲
 
         hdr_cells = ct.rows[0].cells
         for i, column_name in enumerate(tbl_data_docx.columns):
-            cell_p_hdr = hdr_cells[i].paragraphs[0]; cell_p_hdr.text = ''
+            cell_p_hdr = hdr_cells[i].paragraphs[0]
+            cell_p_hdr.text = ''
             run_hdr = cell_p_hdr.add_run(str(column_name))
-            run_hdr.font.name = 'Times New Roman'; run_hdr.font.bold = True; run_hdr.font.size = Pt(9)
+            run_hdr.font.name = 'Times New Roman'
+            run_hdr.font.bold = True
+            run_hdr.font.size = Pt(8) # Reduced font size for more space
             cell_p_hdr.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
 
         for _, data_row_series in tbl_data_docx.iterrows():
             row_cells = ct.add_row().cells
             for i, cell_value in enumerate(data_row_series):
-                cell_p_data = row_cells[i].paragraphs[0]; cell_p_data.text = ''
+                cell_p_data = row_cells[i].paragraphs[0]
+                cell_p_data.text = ''
                 run_data = cell_p_data.add_run(str(cell_value))
-                run_data.font.name = 'Times New Roman'; run_data.font.size = Pt(9)
-                cell_p_data.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT if i == 0 else WD_PARAGRAPH_ALIGNMENT.CENTER
+                run_data.font.name = 'Times New Roman'
+                run_data.font.size = Pt(8) # Reduced font size for more space
+                cell_p_data.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     else:
         doc.add_paragraph("No class scores to display.")
 
+    # --- PDF Conversion and Cleanup (no changes here) ---
     pdf_generated_successfully = False
     try:
         doc.save(tmp_docx)
@@ -618,7 +696,6 @@ def build_class_pdf(df: pd.DataFrame, image_path: str, exam_details: Dict[str, A
             else:
                 print(f"INFO (CR Class): Temp DOCX {tmp_docx} KEPT for debugging.", file=sys.stderr)
     return (pdf_name, csv_name) if pdf_generated_successfully else (None, csv_name)
-
 # ---------------------------------------------------------------------------
 # MAIN PROCESSING FUNCTION
 # ---------------------------------------------------------------------------

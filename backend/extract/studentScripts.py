@@ -15,7 +15,7 @@ Can be initialized with a specific professor_upload_id for targeted processing.
 
 import os
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Union
 import time
 import argparse # For CLI argument parsing
 
@@ -26,6 +26,10 @@ from bson.objectid import ObjectId # <-- IMPORT THIS
 # 👉 Your existing student-side implementation
 from Answer_Generator import Student   # must be import-able
 
+def natural_sort_key(s: str) -> List[Union[int, str]]:
+    """Helper for sorting strings with numbers in a natural order."""
+    import re
+    return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
 
 class ProfessorUploadHandler(Student):
     """
@@ -217,9 +221,6 @@ class ProfessorUploadHandler(Student):
         """Main driver — decides mode & updates DB."""
         if not self.script_paths: # Check if script_paths ended up empty
             print(f"Python (ProfessorUploadHandler): No student script paths found or resolved for doc {self.prof_doc['_id']}. Aborting run.")
-            # Not raising an error here, as an empty list is a valid state if no scripts were uploaded.
-            # The update logic below will handle an empty students_payload.
-            # If an error *should* be raised, do it in __init__ or here.
             students_payload = []
         elif len(self.script_paths) == 1:
             print(f"Python (ProfessorUploadHandler): 📝 Found 1 script path. Treating as ONE combined PDF for doc {self.prof_doc['_id']}.")
@@ -234,27 +235,17 @@ class ProfessorUploadHandler(Student):
                 except Exception as e:
                     print(f"Python (ProfessorUploadHandler):   ⚠ skipped {os.path.basename(path_val)}: {e}")
 
+        if students_payload:
+            print(f"Python (ProfessorUploadHandler): Sorting extracted answers for all students before DB update.")
+            for student_data in students_payload:
+                if student_data.get("answers"):
+                    # Sort the 'answers' list in-place based on the 'question_no' field
+                    student_data["answers"].sort(key=lambda x: natural_sort_key(x.get("question_no", "0")))
+        
         if not students_payload:
-            # This can happen if script_paths was empty or all PDFs failed processing.
-            # The current script raises an error. For an API, you might want to handle this differently,
-            # e.g., update the DB with an empty students array and a specific status.
-            # For now, keeping original behavior:
             print(f"Python (ProfessorUploadHandler): No student data extracted for doc {self.prof_doc['_id']}. Aborting DB update for 'students' field.")
-            # To avoid erroring out if no student data is found (e.g. professor uploaded empty/bad PDFs)
-            # you could choose to update with an empty array and a specific status.
-            # However, the original script raised an error, so let's keep it unless API needs a softer failure.
-            # For API use, it's often better not to raise RuntimeError here but let the API decide how to respond.
-            # Let's try to update with empty students array and let the API report success of operation,
-            # but the data payload will show 0 students.
-            #
-            # If you want to strictly follow "raise RuntimeError" from original:
-            # raise RuntimeError(f"No student data extracted for doc {self.prof_doc['_id']} — aborting update.")
-            #
-            # If allowing empty payload (more API friendly):
             print(f"Python (ProfessorUploadHandler): No student data extracted. Proceeding to update doc {self.prof_doc['_id']} with empty students list.")
-            # students_payload remains an empty list
 
-        # MongoDB update on the SAME professor document (self.prof_doc)
         try:
             update_fields = {
                 "students": students_payload,

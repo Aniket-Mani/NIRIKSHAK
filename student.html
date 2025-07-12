@@ -72,15 +72,15 @@
         </select>
     </div>
 
-    <div class="container">
-        <div class="card" style="min-height: 180px;">
-            <h2>Upload Answer Script</h2>
-            <p>PDF/Image format</p>
-            <label class="upload-btn">
-                <input type="file" id="answerScript" accept="image/*,.pdf" >
-                Choose File
-            </label>
-        </div>
+    <div class="container" style="display: flex; justify-content: center;">
+     <div class="card" style="min-height: 180px; width: 40%;">
+        <h2>Upload Answer Script</h2>
+        <p>PDF/Image format</p>
+        <label class="upload-btn">
+            <input type="file" id="answerScript" accept="image/*,.pdf" >
+            Choose File
+        </label>
+     </div>
     </div>
 
     <div class="action-buttons">
@@ -278,11 +278,11 @@
                 submitStatusMsgEl.textContent = result.message || "Uploaded successfully!";
                 submitStatusMsgEl.style.color = 'green';
                 // Reset form fields
-                courseSelect.value = ''; semesterSelect.value = ''; yearInput.value = '';
-                examTypeSelect.value = ''; sectionTypeSelect.value = '';
-                subjectSelect.innerHTML = '<option value="">Select Subject</option>'; subjectSelect.disabled = true;
-                subjectCodeSelect.innerHTML = '<option value="">Subject Code</option>'; subjectCodeSelect.disabled = true;
-                document.getElementById('answerScript').value = '';
+                // courseSelect.value = ''; semesterSelect.value = ''; yearInput.value = '';
+                // examTypeSelect.value = ''; sectionTypeSelect.value = '';
+                // subjectSelect.innerHTML = '<option value="">Select Subject</option>'; subjectSelect.disabled = true;
+                // subjectCodeSelect.innerHTML = '<option value="">Subject Code</option>'; subjectCodeSelect.disabled = true;
+                // document.getElementById('answerScript').value = '';
             } else {
                 submitStatusMsgEl.textContent = result.message || `Upload failed (Status: ${response.status}).`;
                 submitStatusMsgEl.style.color = 'red';

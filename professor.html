@@ -107,7 +107,7 @@
     <div class="action-buttons">
         <button id="submitBtn">Submit</button>
         <button id="getCombinedResultBtn">Get Results</button>
-        <button>Get Report</button> 
+        <!-- <button>Get Report</button>  -->
         <button id="logoutBtn">Logout</button>
     </div>
     <div id="combinedResultStatus" style="display: none;"></div>
@@ -279,12 +279,12 @@
                 combinedResultStatusDiv.textContent = result.message || "Files uploaded successfully! Select criteria and click 'Get Results' to process.";
                 combinedResultStatusDiv.className = 'success';
                 // Reset form fields
-                courseSelect.value = ''; semesterSelect.innerHTML = '<option value="">Select Semester</option>'; semesterSelect.disabled = true;
-                subjectSelect.innerHTML = '<option value="">Select Subject</option>'; subjectSelect.disabled = true;
-                subjectCodeSelect.innerHTML = '<option value="">Subject Code</option>'; subjectCodeSelect.disabled = true;
-                yearInput.value = ''; examTypeSelect.value = ''; sectionTypeSelect.value = '';
-                document.getElementById('questionPaper').value = ''; document.getElementById('studentScripts').value = '';
-                document.getElementById('actualAnswer').value = '';
+                // courseSelect.value = ''; semesterSelect.innerHTML = '<option value="">Select Semester</option>'; semesterSelect.disabled = true;
+                // subjectSelect.innerHTML = '<option value="">Select Subject</option>'; subjectSelect.disabled = true;
+                // subjectCodeSelect.innerHTML = '<option value="">Subject Code</option>'; subjectCodeSelect.disabled = true;
+                // yearInput.value = ''; examTypeSelect.value = ''; sectionTypeSelect.value = '';
+                // document.getElementById('questionPaper').value = ''; document.getElementById('studentScripts').value = '';
+                // document.getElementById('actualAnswer').value = '';
             } else {
                 combinedResultStatusDiv.textContent = result.message || "Upload failed.";
                 combinedResultStatusDiv.className = 'error';

@@ -1,6 +1,3 @@
-
-
-
 import os
 import re
 import json
@@ -206,51 +203,43 @@ class Student:
     @staticmethod
     def segment_answers(text: str) -> List[Dict]:
         """
-        Turn many possible headings (Answer 1 / Q-3 / 2b) …) into a single
-        'Answer <id>\\n' delimiter, then split the text into answers.
-        Returns:
-            [
-            {"question_id": "1",  "answer_text": "..."},
-            {"question_id": "1a", "answer_text": "..."},
-            ...
-            ]
+        Normalize various answer/question heading formats into 'Answer <id>\n' and extract answers.
+        Supports formats like: Q2, Answer-3a, 4b), 5. and even bare 6 headings.
         """
-        # ── 1) Normalise full labels like "Answer 1", "Q-3", "Solution-5" ─────────────────
+        # Normalize full labels like "Answer 1", "Q-3", etc.
         text = re.sub(
-            r"(?i)"                          # case-insensitive
-            r"\b(?:answer|ans|question|ques|q|solution)"  # the keywords
-            r"[\s\-]*"                       # optional spaces/dash
-            r"([0-9]+[a-z]?)"                # number + optional letter (e.g. 12, 4f)
-            r"\b[\.\):]?",                   # optional trailing punctuation
-            r"Answer \1\n",
-            text,
+            r"(?i)\b(?:answer|ans|question|ques|q|solution)[\s\-]*([0-9]+[a-z]?)\b[\.\):]?",
+            r"Answer \1\n", text
         )
 
-        # ── 2) Normalise bare sub-parts like "1a)" or "4f)" ──────────────────────────────
+        # Normalize sub-question formats like "2a)", "4f)"
         text = re.sub(
-            r"\b([0-9]+[a-z])\)",            # e.g. 1a)  12c)
-            r"Answer \1\n",
-            text,
-            flags=re.IGNORECASE,
+            r"\b([0-9]+[a-z])\)", r"Answer \1\n", text, flags=re.IGNORECASE
         )
 
-        # ── 3) Find the canonical markers and slice the answers ──────────────────────────
-        pattern  = re.compile(r"Answer\s+([0-9]+[a-z]?)\s*\n", flags=re.IGNORECASE)
-        matches  = list(pattern.finditer(text))
+        # Normalize "1." or "3a." style
+        text = re.sub(r"\b([0-9]+[a-z]?)\.\s", r"Answer \1\n", text)
+        text = re.sub(r"\b([0-9]+[a-z]?)\)\s", r"Answer \1\n", text)
+
+        # ✅ New: Normalize bare numbers at start of line like "3 Context..."
+        text = re.sub(r"(?m)^\s*([0-9]+[a-z]?)\s", r"Answer \1\n", text)
+
+        # Segment answers
+        pattern = re.compile(r"Answer\s+([0-9]+[a-z]?)\s*\n", flags=re.IGNORECASE)
+        matches = list(pattern.finditer(text))
         if not matches:
-            raise ValueError("No answer markers found after normalisation.")
+            raise ValueError("No answer markers found after normalization.")
 
         answers = []
         for i, m in enumerate(matches):
-            q_id  = m.group(1)                              # e.g. 1, 1a, 4f
-            start = m.end()                                 # start of this answer
-            end   = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-            answers.append({
-                "question_id": q_id,
-                "answer_text": text[start:end].strip(),
-            })
-        return answers
+            q_id = m.group(1)
+            start = m.end()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+            answer_text = text[start:end].strip()
+            if answer_text:
+                answers.append({"question_id": q_id, "answer_text": answer_text})
 
+        return answers
 
     # ───────────────────────── Core pipeline ───────────────────────── #
 

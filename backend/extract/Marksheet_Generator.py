@@ -100,6 +100,20 @@ except Exception as e:
     traceback.print_exc(file=sys.stderr)
     sys.exit(1)
 
+def normalize_qid(qid: Any) -> str:
+    """
+    Robustly normalizes a question ID to a consistent format.
+    Examples: "Q1 (a)" -> "1a", "2b" -> "2b", "3" -> "3".
+    """
+    if not isinstance(qid, str):
+        qid = str(qid)
+    # Convert to lowercase, remove all whitespace, parentheses, and periods.
+    s = qid.lower().strip()
+    s = re.sub(r'[\s().]', '', s)
+    # Remove leading "q" or "question"
+    s = re.sub(r'^(question|q)', '', s)
+    return s
+
 def preprocess(text: str) -> str:
     if not text or not isinstance(text, str): return ""
     text = re.sub(r'\s+', ' ', text).strip()
@@ -162,54 +176,77 @@ def similarity_dataframe(
     max_marks_map: Dict[str, int]
 ) -> pd.DataFrame:
     rows: List[Dict[str, Any]] = []
-    roll = student_doc.get("username") # Assuming 'username' is the roll number key
-    if not roll:
-        print(f"WARNING (MarksheetGen): Student document missing 'username' (roll_no): {student_doc.get('_id')}", file=sys.stderr)
+    roll_no = student_doc.get("username")
+    if not roll_no:
+        print(f"WARNING (MarksheetGen): Student doc missing 'username': {student_doc.get('_id')}", file=sys.stderr)
         return pd.DataFrame()
 
+    # --- NEW ROBUST LOGIC START ---
+
+    # 1. Normalize the professor's data keys.
+    normalized_ref_vecs = {normalize_qid(k): v for k, v in ref_vecs.items()}
+    normalized_max_marks_map = {normalize_qid(k): v for k, v in max_marks_map.items()}
+
+    # 2. Aggregate all of a student's answers by the PRIMARY question number.
+    student_answers_by_primary_qid: Dict[str, List[str]] = {}
+    primary_qid_pattern = re.compile(r'(\d+)')
     student_answers_list = student_doc.get("extractedAnswer", {}).get("answers", [])
-    for ans_data in student_answers_list:
-        if not isinstance(ans_data, dict): continue
-        qid_from_student = ans_data.get("question_id")
-        # Normalize QID consistently
-        qid_normalized = str(qid_from_student).strip().replace(" ", "").replace(".", "_") if qid_from_student is not None else None
-        stu_answer_text = ans_data.get("answer_text")
-        if not qid_normalized or stu_answer_text is None: continue
+    if isinstance(student_answers_list, list):
+        for ans_data in student_answers_list:
+            qid_from_student = ans_data.get("question_id")
+            answer_text = ans_data.get("answer_text")
+            if qid_from_student and answer_text:
+                match = primary_qid_pattern.match(str(qid_from_student))
+                if match:
+                    primary_qid = match.group(1)
+                    student_answers_by_primary_qid.setdefault(primary_qid, []).append(answer_text)
 
-        stu_vec = embed(str(stu_answer_text)) # Ensure text is string
+    # 3. Iterate through the PROFESSOR's questions.
+    def natural_sort_key(s: str) -> List[Union[int, str]]:
+        return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
+    
+    sorted_prof_qids = sorted(normalized_max_marks_map.keys(), key=natural_sort_key)
+
+    for prof_qid_normalized in sorted_prof_qids:
+        prof_primary_qid_match = primary_qid_pattern.match(prof_qid_normalized)
+        if not prof_primary_qid_match:
+            continue
+        prof_primary_qid = prof_primary_qid_match.group(1)
+        
+        stu_answer_texts = student_answers_by_primary_qid.get(prof_primary_qid)
+        question_max_marks = normalized_max_marks_map.get(prof_qid_normalized, 0)
         similarity = 0.0
-        if stu_vec is not None:
-            ref_q_vecs = ref_vecs.get(qid_normalized, [])
-            if not ref_q_vecs and qid_normalized in max_marks_map: # Check if QID was expected
-                print(f"WARNING (MarksheetGen): No reference vectors found for QID '{qid_normalized}' which has max_marks. Similarity will be 0.", file=sys.stderr)
-            
-            sim_scores = [cos_sim(stu_vec, ref_v) for ref_v in ref_q_vecs if ref_v is not None]
-            similarity = max(sim_scores) if sim_scores else 0.0
+        student_answer_summary = "Not Answered"
 
-        question_max_marks = max_marks_map.get(qid_normalized, 0)
-        if qid_normalized not in max_marks_map:
-             # This might be okay if student answered a question not in prof's list, or vice-versa.
-             print(f"INFO (MarksheetGen): Max marks not found for QID '{qid_normalized}' (student answer). Max marks will be 0.", file=sys.stderr)
+        if stu_answer_texts:
+            combined_stu_answer = "\n\n".join(stu_answer_texts)
+            student_answer_summary = (combined_stu_answer[:100] + "...") if len(combined_stu_answer) > 100 else combined_stu_answer
+            
+            stu_vec = embed(combined_stu_answer)
+            if stu_vec is not None:
+                ref_q_vecs_for_qid = normalized_ref_vecs.get(prof_qid_normalized, [])
+                sim_scores = [cos_sim(stu_vec, ref_v) for ref_v in ref_q_vecs_for_qid if ref_v is not None]
+                similarity = max(sim_scores) if sim_scores else 0.0
 
         rows.append({
-            "roll_no"    : roll,
-            "question_id": qid_normalized,
-            "max_marks"  : question_max_marks,
-            "similarity" : round(similarity, 3),
-            "student_answer_summary": str(stu_answer_text)[:100] + "..." if stu_answer_text and len(str(stu_answer_text)) > 100 else str(stu_answer_text)
+            "roll_no": roll_no,
+            "question_id": prof_qid_normalized,
+            "max_marks": question_max_marks,
+            "similarity": round(similarity, 3),
+            "student_answer_summary": student_answer_summary
         })
-    df = pd.DataFrame(rows)
-    if df.empty:
-        print(f"INFO (MarksheetGen): Similarity dataframe is empty for roll {roll}.", file=sys.stderr)
-        # Ensure it still has the necessary columns for concatenation later, if applicable
-        return pd.DataFrame(columns=["roll_no", "question_id", "max_marks", "similarity", "student_answer_summary", "score"])
 
+    # --- NEW ROBUST LOGIC END ---
+
+    if not rows:
+        print(f"INFO (MarksheetGen): No data to build dataframe for roll {roll_no}.", file=sys.stderr)
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows)
 
     def score_rule(sim: float, max_m: int) -> int:
-        # Ensure sim and max_m are numeric
         sim = float(sim) if sim is not None else 0.0
         max_m = int(max_m) if max_m is not None else 0
-        
         if sim >= 0.90: pct = 1.00
         elif sim >= 0.80: pct = 0.90
         elif sim >= 0.70: pct = 0.75
@@ -221,7 +258,6 @@ def similarity_dataframe(
 
     df["score"] = df.apply(lambda r: score_rule(r["similarity"], r["max_marks"]), axis=1)
     return df
-
 
 # ---------------------------------------------------------------------------
 # DOCX / PDF BUILDERS
@@ -238,7 +274,7 @@ def build_student_pdf_with_pandoc(df_student_scores: pd.DataFrame, roll_no: str,
     pdf_name = os.path.join(OUTPUT_DIR_MARKETSHEETS, f"{base_filename}.pdf")
     tmp_docx = os.path.join(OUTPUT_DIR_MARKETSHEETS, f"tmp_{base_filename}.docx")
 
-    # Ensure numeric types for calculations
+ 
     df_student_scores['max_marks'] = pd.to_numeric(df_student_scores['max_marks'], errors='coerce').fillna(0).astype(int)
     df_student_scores['score'] = pd.to_numeric(df_student_scores['score'], errors='coerce').fillna(0).astype(int)
     
@@ -247,16 +283,16 @@ def build_student_pdf_with_pandoc(df_student_scores: pd.DataFrame, roll_no: str,
     )
     
     total_score = df_student_scores["score"].sum() if not df_student_scores.empty else 0
-    # Get total_max_marks from professor_doc if available, otherwise sum from df
+
     total_max_from_prof = exam_details_for_pdf_gen.get("total_max_marks_from_prof", 0)
     total_max_from_df = df_student_scores["max_marks"].sum() if not df_student_scores.empty else 0
 
     if not df_student_scores.empty and total_max_from_prof > 0 and total_max_from_df != total_max_from_prof:
         print(f"WARNING (MarksheetGen): Discrepancy in max marks sum. DF sum: {total_max_from_df}, Prof sum: {total_max_from_prof}. Using professor's total for overall percentage if available.", file=sys.stderr)
         total_max = total_max_from_prof
-    elif total_max_from_prof > 0: # df might be empty but prof total is known
+
         total_max = total_max_from_prof
-    else: # Fallback to df sum if prof total not available
+
         total_max = total_max_from_df
 
     total_pct = round(total_score / total_max * 100, 2) if total_max > 0 else 0.0
@@ -266,7 +302,7 @@ def build_student_pdf_with_pandoc(df_student_scores: pd.DataFrame, roll_no: str,
     
     cols_for_sheet = ["question_id", "max_marks", "score", "percentage"]
     if not df_student_scores.empty:
-        # Ensure all data is string for display in table, to prevent type issues with concat
+
         df_display = df_student_scores[cols_for_sheet].astype(str)
         summary_display_df = summary_df[cols_for_sheet].astype(str)
         sheet = pd.concat([df_display, summary_display_df], ignore_index=True)
@@ -275,20 +311,18 @@ def build_student_pdf_with_pandoc(df_student_scores: pd.DataFrame, roll_no: str,
 
 
     try:
-        # Save the logical sheet (with numbers) to CSV
+
         logical_sheet_for_csv = pd.concat([df_student_scores[cols_for_sheet], summary_df[cols_for_sheet]], ignore_index=True) if not df_student_scores.empty else summary_df[cols_for_sheet]
         logical_sheet_for_csv.to_csv(csv_name, index=False)
         print(f"INFO (MarksheetGen): Student scores CSV saved to {csv_name}", file=sys.stderr)
     except Exception as e:
         print(f"ERROR (MarksheetGen): Could not save CSV {csv_name}. Error: {e}", file=sys.stderr)
 
-    # --- DOCX Generation Start (Identical to your original) ---
+
     doc = Document()
-    # Add logo if it exists
-  # Add logo if it exists, using a table for better centering control
     if os.path.exists(logo_image_path_param):
         try:
-        # Add a centered paragraph at the beginning
+
             paragraph = doc.add_paragraph()
             paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
 
@@ -352,7 +386,7 @@ def build_student_pdf_with_pandoc(df_student_scores: pd.DataFrame, roll_no: str,
                 row_cells[c_idx].text = str(cell_value)
     else:
         doc.add_paragraph("No scores to display.")
-    # --- DOCX Generation End ---
+    
 
     pdf_generated_successfully = False
     try:
@@ -364,14 +398,7 @@ def build_student_pdf_with_pandoc(df_student_scores: pd.DataFrame, roll_no: str,
         pandoc_command = [
             'pandoc', tmp_docx,
             '-o', pdf_name,
-            # '--pdf-engine=xelatex', # Or other engines like weasyprint, if you have specific needs and they are installed
-            # You can add more pandoc options here if needed, e.g., for margins, fonts
-            # For example, to specify a LaTeX engine (if you have LaTeX installed):
-            # '--pdf-engine=pdflatex' # or xelatex, lualatex
         ]
-        # To handle potential issues with default fonts or characters, especially if not using LaTeX:
-        # pandoc_command.extend(['--variable', 'mainfont="DejaVu Sans"']) # Example: using a common font
-
         process = subprocess.run(pandoc_command, capture_output=True, text=True, check=False)
 
         if process.returncode == 0:
@@ -386,8 +413,7 @@ def build_student_pdf_with_pandoc(df_student_scores: pd.DataFrame, roll_no: str,
             print(f"ERROR (MarksheetGen): Pandoc conversion failed for student {roll_no}. Return code: {process.returncode}", file=sys.stderr)
             print(f"Pandoc stdout:\n{process.stdout}", file=sys.stderr)
             print(f"Pandoc stderr:\n{process.stderr}", file=sys.stderr)
-            # Consider keeping tmp_docx if pandoc fails, for debugging the docx
-            # return tmp_docx, csv_name # Or handle as error
+            
 
     except FileNotFoundError:
         print(f"ERROR (MarksheetGen): Pandoc command not found. Please ensure Pandoc is installed and in your system's PATH.", file=sys.stderr)
@@ -396,9 +422,9 @@ def build_student_pdf_with_pandoc(df_student_scores: pd.DataFrame, roll_no: str,
         print(f"ERROR (MarksheetGen): DOCX to PDF conversion using Pandoc failed for student {roll_no}. Error: {e_conv}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
     finally:
-        # Always try to remove the temp DOCX if it exists, unless Pandoc failed and you want to inspect it
+       
         if os.path.exists(tmp_docx):
-            if pdf_generated_successfully : # Only remove if PDF was made
+            if pdf_generated_successfully :
                 try:
                     os.remove(tmp_docx)
                     print(f"INFO (MarksheetGen): Temp DOCX file {tmp_docx} removed.", file=sys.stderr)
@@ -412,11 +438,9 @@ def build_student_pdf_with_pandoc(df_student_scores: pd.DataFrame, roll_no: str,
         return pdf_name, csv_name
     else:
         print(f"WARNING (MarksheetGen): PDF generation ultimately failed or file not confirmed for {roll_no}. Returning None for PDF path.", file=sys.stderr)
-        # If Pandoc fails, you might want to return the path to the DOCX for manual inspection/conversion
-        # or just None for PDF path to indicate failure.
-        return None, csv_name # Returning None for PDF if Pandoc failed
+        
+        return None, csv_name 
 
-# Alias the new function to the old name if the rest of the script uses `build_student_pdf`
 build_student_pdf = build_student_pdf_with_pandoc
 
 

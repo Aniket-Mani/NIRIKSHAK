@@ -67,39 +67,40 @@ VERY IMPORTANT Instructions for the AI:
 2.  *Structure of Each JSON Object:*
     * "questionNo": (String) The identifier for the question or specific sub-question.
     * "questionText": (String) The complete text of that specific question or sub-question.
-    * "marks": (Number) The marks allocated to that specific question or sub-question. If marks are not specified for a particular question/sub-question, use `null`.
+    * "marks": (Number) The marks allocated to that specific question or sub-question. If marks are not specified, use `null`.
 
 3.  *Handling Main Questions and Sub-questions (Flattening):*
-    * If a main question (e.g., "1.", "I.") has sub-parts (e.g., "a)", "b)", "(i)"), each sub-part MUST be treated as a separate and distinct entry in the top-level JSON array.
-    * For such cases, the "questionNo" field should combine the main question identifier and the sub-question identifier. For example:
-        * If the main question is "1." and sub-question is "a)", "questionNo" should be "1 (a)".
-        * If the main question is "II." and sub-question is "(i)", "questionNo" should be "II (i)".
-        * Use a consistent format for these combined numbers, preferably "MainNo (SubNo)".
-    * The "questionText" for these flattened entries MUST be the text of the specific sub-question.
-    * If a main question itself (e.g., "1. Answer the following questions:") does not have its own text that constitutes a question to be answered (and is merely a lead-in to sub-questions), then DO NOT create a separate entry for the main question number alone. Only create entries for the actual sub-questions.
-    * If a question is standalone without sub-parts (e.g., "3. Explain superposition."), then its "questionNo" will be "3", and its "questionText" will be "Explain superposition."
+    * If a main question (e.g., "1.", "II.") has sub-parts (e.g., "a)", "(i)"), each sub-part MUST be treated as a separate and distinct entry in the top-level JSON array.
+    * For these cases, the "questionNo" field MUST combine the main number and the sub-part identifier WITHOUT spaces or parentheses.
+    * **Correct Format Examples:**
+        * Main "1.", sub "a)"  ->  "questionNo": "1a" , * Dont Add Q1a, Q2b, etc. as sub-questions. directly use "1a", "2b", etc.
+        * Main "2.", sub "(b)" ->  "questionNo": "2b"
+        * Main "III", sub "i"  ->  "questionNo": "3i"  (Use Arabic numerals for Roman numerals)
+    * **Incorrect Format Examples (DO NOT USE):** "1 (a)", "2.b", "Q1a", "Question 3(i)"
+    * If a main question (e.g., "1. Answer the following:") is just a lead-in, DO NOT create an entry for it. Only create entries for the actual sub-questions.
+    * If a question is standalone without sub-parts (e.g., "4. Explain superposition."), its "questionNo" should be just the number: "4".
+    * ▲▲▲ END OF KEY CHANGE ▲▲▲
 
 4.  *Marks Allocation:*
     * Extract the marks specifically associated with each individual question or sub-question.
-    * If marks are mentioned for a main question that has sub-parts, and those sub-parts also have individual marks, prioritize the marks of the individual sub-parts. If sub-parts don't have marks but the main question does, and the main question is broken down, try to infer or distribute if clearly indicated, otherwise assign the main question's marks to each sub-part if it's implied they share it or if no other scheme is obvious. If unclear, marks for sub-parts can be `null`.
+    * If marks are mentioned for a main question that has sub-parts, and those sub-parts also have individual marks, prioritize the marks of the individual sub-parts.
+    * If it's unclear, marks for sub-parts can be `null`.
 
 5.  *Exclusions from this JSON format:*
-    * Do NOT include general exam details (like institute name, course code, date, overall full marks for the exam, department, exam title).
-    * Do NOT include a separate "instructions" section from the exam paper (e.g., "Answer all questions," "Figures to the right indicate full marks.").
-    * There should be NO "subQuestions" field or any nested question structures within a question object. The output is a single, flat array of question objects.
-    * Do NOT include "answer" or "code" fields in the JSON objects.
+    * Do NOT include general exam details (institute name, course code, date, etc.).
+    * Do NOT include general instructions (e.g., "Answer all questions").
+    * There should be NO "subQuestions" field or any nested structures. The output must be a single, flat array.
+    * Do NOT include "answer" or "code" fields.
 
-6.  JSON Validity and Completeness:
-    * The final output MUST be a single, valid JSON array of objects.
-    * Ensure all specified keys ("questionNo", "questionText", "marks") are present in each object.
-    * Pay close attention to commas between objects in the array, and brackets `[]` for the array and braces `{}` for the objects.
+6.  *JSON Validity and Completeness:*
+    * The final output MUST be a single, valid JSON array.
+    * Ensure all keys ("questionNo", "questionText", "marks") are present in each object.
 
-7.  Empty or Missing Information:
-    * If information for the "questionText" field is not found for an identified question number (which should be rare), use an empty string `""`.
-    * If "marks" for a specific question/sub-question are not found or not applicable, use `null`.
+7.  *Empty or Missing Information:*
+    * If "marks" for a specific question/sub-question are not found, use `null`.
     * If no questions are found in the document at all, return an empty array `[]`.
 
-Return ONLY the populated JSON array as a valid JSON string. Do NOT include any preamble, conversational text, markdown characters (like ```json), or any explanations before or after the JSON array itself. Only return the pure JSON array.
+Return ONLY the populated JSON array as a valid JSON string. Do NOT include any preamble, conversational text, or markdown characters (like ```json) before or after the JSON array itself.
 """
 
 
